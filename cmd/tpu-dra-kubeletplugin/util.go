@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -259,6 +260,9 @@ func ChipCount(chipCount string) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("invalid TPU chip count %q", chipCount)
 	}
+	if count <= 0 {
+		return -1, fmt.Errorf("invalid TPU chip count %q: must be positive", chipCount)
+	}
 	return count, nil
 }
 
@@ -369,6 +373,9 @@ func getTopologyDims(topology string) ([]int64, error) {
 		if err != nil {
 			return nil, err
 		}
+		if n <= 0 {
+			return nil, fmt.Errorf("invalid topology %s: dimension %d must be positive", topology, n)
+		}
 		topologyDims = append(topologyDims, int64(n))
 	}
 
@@ -378,6 +385,17 @@ func getTopologyDims(topology string) ([]int64, error) {
 	}
 	if len(topologyDims) != 3 {
 		return nil, fmt.Errorf("invalid topology format: %s, must be 2D or 3D", topology)
+	}
+
+	// Guard the chip-count product against integer overflow so an extreme
+	// topology is rejected here rather than wrapping around downstream in
+	// calculateTotalChips (which feeds numCores and isSingleHost).
+	product := int64(1)
+	for _, dim := range topologyDims {
+		if dim > math.MaxInt64/product {
+			return nil, fmt.Errorf("invalid topology %s: chip count exceeds maximum", topology)
+		}
+		product *= dim
 	}
 	return topologyDims, nil
 }

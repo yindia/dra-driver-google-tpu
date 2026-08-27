@@ -11,6 +11,32 @@ import (
 	"testing"
 )
 
+func TestChipCount(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    int
+		wantErr bool
+	}{
+		{name: "valid", in: "4", want: 4},
+		{name: "zero", in: "0", wantErr: true},
+		{name: "negative", in: "-1", wantErr: true},
+		{name: "non-numeric", in: "abc", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ChipCount(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ChipCount() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("ChipCount() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGetTopologyDims(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -39,6 +65,24 @@ func TestGetTopologyDims(t *testing.T) {
 		{
 			name:     "invalid topology non-numeric",
 			topology: "2xa",
+			want:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid zero dimension",
+			topology: "2x0x4",
+			want:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid negative dimension",
+			topology: "2x-2x4",
+			want:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "invalid overflowing product",
+			topology: "9999999999x9999999999x9999999999",
 			want:     nil,
 			wantErr:  true,
 		},
