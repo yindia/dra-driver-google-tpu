@@ -288,34 +288,36 @@ func convertAcceleratorType(tpuGen string, topologyDims []int64) (string, error)
 // The generations it can return, and how to add a new one, are defined by
 // tpuGenerationFamilies in hardware.go.
 func AcceleratorGen(accelerator string) (string, error) {
-	if acceleratorRegex.MatchString(accelerator) {
-		return accelerator, nil
-	}
-	if !pastAcceleratorRegex.MatchString(accelerator) {
+	var gen string
+	switch {
+	case acceleratorRegex.MatchString(accelerator):
+		gen = accelerator
+	case pastAcceleratorRegex.MatchString(accelerator):
+		// Edge cases that match regex but are not valid accelerator types.
+		if accelerator == "tpu-v4-device" || accelerator == "tpu-v4-lite-podslice" {
+			return "", fmt.Errorf("no such accelerator type: %s", accelerator)
+		}
+
+		// gen = v2, v3, v4, v5, v5p, v6e
+		gen = strings.Split(accelerator, "-")[1]
+
+		// append 'lite' to lite device and lite podslice
+		if strings.Contains(accelerator, "lite") {
+			gen = fmt.Sprintf("%slite", gen)
+		}
+
+		// append 'pod' to v5 lite podslices
+		if strings.HasPrefix(gen, "v5") && strings.Contains(accelerator, "podslice") {
+			gen = fmt.Sprintf("%spod", gen)
+		}
+	default:
 		return "", fmt.Errorf("invalid accelerator type: %v", accelerator)
 	}
 
-	// Edge cases that match regex but are not valid accelerator types.
-	if accelerator == "tpu-v4-device" || accelerator == "tpu-v4-lite-podslice" {
-		return "", fmt.Errorf("no such accelerator type: %s", accelerator)
+	if !isValidTPUGeneration(gen) {
+		return "", fmt.Errorf("invalid TPU generation: %s", gen)
 	}
-
-	// v = v2, v3, v4, v5, v5p, v6e
-	v := strings.Split(accelerator, "-")[1]
-
-	// append 'lite' to lite device and lite podslice
-	if strings.Contains(accelerator, "lite") {
-		v = fmt.Sprintf("%slite", v)
-	}
-
-	// append 'pod' to v5 lite podslices
-	if strings.HasPrefix(v, "v5") && strings.Contains(accelerator, "podslice") {
-		v = fmt.Sprintf("%spod", v)
-	}
-	if !isValidTPUGeneration(v) {
-		return "", fmt.Errorf("invalid TPU generation: %s", v)
-	}
-	return v, nil
+	return gen, nil
 }
 
 // numCores calculates the number of cores based on the topology.

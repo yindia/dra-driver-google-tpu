@@ -195,6 +195,20 @@ func TestAcceleratorGen(t *testing.T) {
 			want:        "",
 			wantErr:     true,
 		},
+		{
+			// new-style regex matches but generation is unsupported: #32
+			name:        "unsupported new-style future generation",
+			accelerator: "tpu7x",
+			want:        "",
+			wantErr:     true,
+		},
+		{
+			// new-style regex matches shape but is garbage: #32
+			name:        "unsupported new-style garbage",
+			accelerator: "tpu99z",
+			want:        "",
+			wantErr:     true,
+		},
 	}
 
 	for _, tt := range tests {
