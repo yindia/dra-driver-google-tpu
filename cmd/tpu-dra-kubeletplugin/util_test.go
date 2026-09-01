@@ -42,6 +42,18 @@ func TestGetTopologyDims(t *testing.T) {
 			want:     nil,
 			wantErr:  true,
 		},
+		{
+			name:     "zero dimension rejected",
+			topology: "2x0x4",
+			want:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "negative dimension rejected",
+			topology: "2x-2",
+			want:     nil,
+			wantErr:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -61,6 +73,58 @@ func TestGetTopologyDims(t *testing.T) {
 						t.Errorf("getTopologyDims() got[%d] = %v, want %v", i, got[i], tt.want[i])
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestCalculateTotalChips(t *testing.T) {
+	tests := []struct {
+		name    string
+		dims    []int64
+		want    int
+		wantErr bool
+	}{
+		{name: "normal topology", dims: []int64{2, 2, 4}, want: 16},
+		{name: "oversized product rejected", dims: []int64{1024, 1024, 2}, wantErr: true},
+		{name: "single oversized dim does not overflow", dims: []int64{2, 9223372036854775807}, wantErr: true},
+		{name: "non-positive dim rejected", dims: []int64{2, 0, 4}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := calculateTotalChips(tt.dims)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("calculateTotalChips() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("calculateTotalChips() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChipCount(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{name: "valid count", input: "4", want: 4, wantErr: false},
+		{name: "non-numeric rejected", input: "x", want: -1, wantErr: true},
+		{name: "zero rejected", input: "0", want: -1, wantErr: true},
+		{name: "negative rejected", input: "-1", want: -1, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ChipCount(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ChipCount() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ChipCount() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
