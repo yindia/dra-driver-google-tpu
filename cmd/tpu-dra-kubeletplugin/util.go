@@ -240,7 +240,11 @@ func InitEnvs(opts InitEnvOptions) (map[string]string, error) {
 
 	// For single host we can add additional env vars to further reduce
 	// configuration required by user.
-	if isSingleHost(opts.ChipCount, topologyDims) {
+	singleHost, err := isSingleHost(opts.ChipCount, topologyDims)
+	if err != nil {
+		return nil, err
+	}
+	if singleHost {
 		addSingleHostEnvs(envs)
 	}
 	return envs, nil
@@ -258,6 +262,9 @@ func ChipCount(chipCount string) (int, error) {
 	count, err := strconv.Atoi(chipCount)
 	if err != nil {
 		return -1, fmt.Errorf("invalid TPU chip count %q", chipCount)
+	}
+	if count <= 0 {
+		return -1, fmt.Errorf("invalid TPU chip count %q: must be positive", chipCount)
 	}
 	return count, nil
 }
@@ -325,7 +332,10 @@ func AcceleratorGen(accelerator string) (string, error) {
 // Non-lite = 2 cores per chip.
 func numCores(tpuGen string, topologyDims []int64) (int, error) {
 	// Calculate total chips in the podslice.
-	totalChips := calculateTotalChips(topologyDims)
+	totalChips, err := calculateTotalChips(topologyDims)
+	if err != nil {
+		return 0, err
+	}
 
 	// lite-device and lite-podslice have 1 core per chip.
 	// v6e is also a "lite"
@@ -355,12 +365,26 @@ func calculateHostBounds(requestedChipCount int, topologyDims []int64) (string, 
 	return strings.Join(hostBounds, ","), nil
 }
 
-func calculateTotalChips(topologyDims []int64) int {
-	totalChips := 1
+// maxTotalChips bounds the product of topology dimensions so an out-of-range
+// topology is rejected instead of silently overflowing calculateTotalChips.
+// The largest real TPU topology is 16x16x16 = 4096 chips; the cap is generous.
+const maxTotalChips = 1 << 20
+
+// calculateTotalChips multiplies the topology dimensions, guarding against
+// overflow at the multiplication itself: it checks before each multiply so an
+// oversized dimension cannot wrap int64 to a negative value.
+func calculateTotalChips(topologyDims []int64) (int, error) {
+	totalChips := int64(1)
 	for _, chips := range topologyDims {
-		totalChips *= int(chips)
+		if chips <= 0 {
+			return 0, fmt.Errorf("invalid topology dimension %d in %v: must be positive", chips, topologyDims)
+		}
+		if totalChips > maxTotalChips/chips {
+			return 0, fmt.Errorf("topology dimensions %v exceed the maximum of %d chips", topologyDims, maxTotalChips)
+		}
+		totalChips *= chips
 	}
-	return totalChips
+	return int(totalChips), nil
 }
 
 func getTopologyDims(topology string) ([]int64, error) {
@@ -370,6 +394,9 @@ func getTopologyDims(topology string) ([]int64, error) {
 		n, err := strconv.Atoi(s)
 		if err != nil {
 			return nil, err
+		}
+		if n <= 0 {
+			return nil, fmt.Errorf("invalid topology dimension %q in %s: must be positive", s, topology)
 		}
 		topologyDims = append(topologyDims, int64(n))
 	}
@@ -438,10 +465,14 @@ func addSingleHostEnvs(envs map[string]string) {
 	envs["TPU_WORKER_HOSTNAMES"] = "localhost"
 }
 
-func isSingleHost(chipCount int, topologyDims []int64) bool {
+func isSingleHost(chipCount int, topologyDims []int64) (bool, error) {
 	// If multiplication of topology dimensions == chip count on this node,
 	// this is a single host.
-	return chipCount == calculateTotalChips(topologyDims)
+	totalChips, err := calculateTotalChips(topologyDims)
+	if err != nil {
+		return false, err
+	}
+	return chipCount == totalChips, nil
 }
 
 func wrap(tpuGen string, topologyDims []int64) (string, error) {
