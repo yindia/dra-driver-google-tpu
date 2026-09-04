@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -158,5 +160,54 @@ func TestPrepareDevicesIgnoresForeignAllocationResults(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNewDeviceState(t *testing.T) {
+	// devDir with two accel-style character device files so enumeration finds
+	// exactly the expected chip count.
+	devDir := t.TempDir()
+	for _, name := range []string{"accel0", "accel1"} {
+		if err := os.WriteFile(filepath.Join(devDir, name), []byte{}, 0600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	pluginDir := t.TempDir()
+	config := &Config{flags: &Flags{
+		cdiRoot:                     t.TempDir(),
+		kubeletPluginsDirectoryPath: pluginDir,
+	}}
+	// DriverPluginPath must exist for the checkpoint manager.
+	if err := os.MkdirAll(config.DriverPluginPath(), 0750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	labels := map[string]string{
+		AcceleratorLabel:      "tpu-v6e-slice",
+		AcceleratorCountLabel: "2",
+		TopologyLabel:         "2x2",
+	}
+
+	state, err := NewDeviceState(config, labels, devDir, make(chan interface{}, 1))
+	if err != nil {
+		t.Fatalf("NewDeviceState: %v", err)
+	}
+	if len(state.allocatable) != 2 {
+		t.Errorf("allocatable devices = %d, want 2", len(state.allocatable))
+	}
+
+	// A checkpoint should now exist and be listable.
+	cps, err := state.checkpointManager.ListCheckpoints()
+	if err != nil {
+		t.Fatalf("ListCheckpoints: %v", err)
+	}
+	found := false
+	for _, c := range cps {
+		if c == DriverPluginCheckpointFile {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected %s checkpoint to be created", DriverPluginCheckpointFile)
 	}
 }
